@@ -7,6 +7,11 @@ terraform {
   }
 }
 
+locals {
+  root_domain = "sysagnostic.com"
+  s3_bucket_names = toset(concat(["www.${local.root_domain}"], [for id in range(1, 4): format("www%d.%s", id, local.root_domain)]))
+}
+
 # Configure the AWS Provider
 provider "aws" {
   region = "eu-north-1"
@@ -26,38 +31,51 @@ resource "aws_acm_certificate" "public_cert" {
   key_algorithm             = "RSA_2048"
 }
 
-resource "aws_s3_bucket" "website_subdomain" {
-  bucket = "www.sysagnostic.com"
+resource "aws_s3_bucket" "website" {
+  for_each = local.s3_bucket_names
+  bucket = each.key
 }
 
-resource "aws_s3_bucket" "website_root" {
-  bucket = "sysagnostic.com"
+resource "aws_cloudfront_origin_access_identity" "website" {
+  comment = "CloudFront access identity for S3"
 }
 
-resource "aws_s3_bucket_website_configuration" "root_redirect" {
-  bucket = "sysagnostic.com"
-  redirect_all_requests_to {
-    host_name = "www.sysagnostic.com"
-    protocol = "https"
+resource "aws_s3_bucket_policy" "allow_cdn_origin_access" {
+  for_each = local.s3_bucket_names
+  bucket = aws_s3_bucket.website["${each.key}"].id
+  policy = data.aws_iam_policy_document.allow_cdn_origin_access[each.key].json
+}
+
+data "aws_iam_policy_document" "allow_cdn_origin_access" {
+  for_each = local.s3_bucket_names
+  statement {
+    principals {
+      type        = "AWS"
+      identifiers = [aws_cloudfront_origin_access_identity.website.iam_arn]
+    }
+    actions = [
+      "s3:GetObject"
+    ]
+    resources = [
+      "${aws_s3_bucket.website[each.key].arn}/*",
+    ]
   }
 }
 
-resource "aws_cloudfront_distribution" "website_subdomain_cdn" {
-  # id = "EGZ5NHN8QDTN0"
+resource "aws_cloudfront_distribution" "website" {
+  for_each = local.s3_bucket_names
   enabled = true
   default_root_object = "index.html"
   is_ipv6_enabled = true
   price_class = "PriceClass_100"
-  aliases = [
-    "www.sysagnostic.com"
-  ]
+  aliases = each.key == "www.sysagnostic.com" ? ["sysagnostic.com", each.key] : [each.key]
   origin {
-    domain_name = "www.sysagnostic.com.s3.eu-north-1.amazonaws.com"
-    origin_id = "www.sysagnostic.com.s3.eu-north-1.amazonaws.com"
+    domain_name = format("%s.s3.eu-north-1.amazonaws.com", each.key)
+    origin_id = format("%s.s3.eu-north-1.amazonaws.com", each.key)
     connection_attempts = 3
     connection_timeout = 10
     s3_origin_config {
-      origin_access_identity = "origin-access-identity/cloudfront/E1ES7836TJBHK1"
+      origin_access_identity = aws_cloudfront_origin_access_identity.website.cloudfront_access_identity_path
     }
   }
   restrictions {
@@ -72,59 +90,11 @@ resource "aws_cloudfront_distribution" "website_subdomain_cdn" {
     ssl_support_method = "sni-only"
   }
   default_cache_behavior {
-    target_origin_id = "www.sysagnostic.com.s3.eu-north-1.amazonaws.com"
+    target_origin_id = format("%s.s3.eu-north-1.amazonaws.com", each.key)
     allowed_methods  = ["GET", "HEAD"]
     viewer_protocol_policy = "redirect-to-https"
     cached_methods = ["GET", "HEAD"]
     cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
-    compress = true
-  }
-}
-
-resource "aws_cloudfront_distribution" "website_root_cdn" {
-  # id = "EGZ5NHN8QDTN0"
-  enabled = true
-  is_ipv6_enabled = true
-  price_class = "PriceClass_100"
-  aliases = [
-    "sysagnostic.com"
-  ]
-  origin {
-    connection_attempts = 3
-    connection_timeout  = 10
-    domain_name         = "sysagnostic.com.s3-website.eu-north-1.amazonaws.com"
-    origin_id           = "sysagnostic.com.s3-website.eu-north-1.amazonaws.com"
-    custom_origin_config {
-      http_port                = 80
-      https_port               = 443
-      origin_keepalive_timeout = 5
-      origin_protocol_policy   = "http-only"
-      origin_read_timeout      = 30
-      origin_ssl_protocols     = [
-          "SSLv3",
-          "TLSv1",
-          "TLSv1.1",
-          "TLSv1.2",
-      ]
-    }
-  }
-  restrictions {
-    geo_restriction {
-      restriction_type = "none"
-    }
-  }
-  viewer_certificate {
-    acm_certificate_arn = "arn:aws:acm:us-east-1:180294196620:certificate/75718dc4-eb94-412c-8d93-cc8c33838c7e"
-    cloudfront_default_certificate = false
-    minimum_protocol_version = "TLSv1.2_2021"
-    ssl_support_method = "sni-only"
-  }
-  default_cache_behavior {
-    target_origin_id = "sysagnostic.com.s3-website.eu-north-1.amazonaws.com"
-    allowed_methods  = ["GET", "HEAD"]
-    viewer_protocol_policy = "allow-all"
-    cached_methods = ["GET", "HEAD"]
-    cache_policy_id = "4135ea2d-6df8-44a3-9df3-4b5a84be39ad"
     compress = true
   }
 }
