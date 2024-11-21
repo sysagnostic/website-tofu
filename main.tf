@@ -57,10 +57,23 @@ data "aws_iam_policy_document" "allow_cdn_origin_access" {
   statement {
     principals {
       type        = "AWS"
-      identifiers = [aws_cloudfront_origin_access_identity.website.iam_arn, local.github_actions_arn]
+      identifiers = [aws_cloudfront_origin_access_identity.website.iam_arn,]
     }
     actions = [
       "s3:GetObject"
+    ]
+    resources = [
+      "${aws_s3_bucket.website[each.key].arn}/*",
+    ]
+  }
+  statement {
+    principals {
+      type        = "AWS"
+      identifiers = [local.github_actions_arn]
+    }
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject"
     ]
     resources = [
       "${aws_s3_bucket.website[each.key].arn}/*",
