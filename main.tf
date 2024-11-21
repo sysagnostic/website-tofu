@@ -1,4 +1,9 @@
 terraform {
+  backend "s3" {
+    bucket = "sysagnostic-tfstate"
+    key    = "website.tfstate"
+    region = "eu-central-1"
+  }
   required_providers {
     aws = {
       source  = "opentofu/aws"
@@ -10,6 +15,7 @@ terraform {
 locals {
   root_domain = "sysagnostic.com"
   s3_bucket_names = toset(concat(["www.${local.root_domain}"], [for id in range(1, 4): format("www%d.%s", id, local.root_domain)]))
+  github_actions_arn = "arn:aws:iam::180294196620:user/github"
 }
 
 # Configure the AWS Provider
@@ -51,7 +57,7 @@ data "aws_iam_policy_document" "allow_cdn_origin_access" {
   statement {
     principals {
       type        = "AWS"
-      identifiers = [aws_cloudfront_origin_access_identity.website.iam_arn]
+      identifiers = [aws_cloudfront_origin_access_identity.website.iam_arn, local.github_actions_arn]
     }
     actions = [
       "s3:GetObject"
