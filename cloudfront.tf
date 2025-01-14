@@ -12,6 +12,17 @@ resource "aws_cloudfront_origin_access_identity" "website" {
   comment = "CloudFront access identity for S3"
 }
 
+resource "aws_cloudfront_response_headers_policy" "http-cache-headers" {
+  name = "http-cache-headers"
+  custom_headers_config {
+    items {
+      header = "Cache-Control"
+      override = false
+      value = "no-cache"
+    }
+  }
+}
+
 resource "aws_cloudfront_distribution" "website" {
   for_each = local.s3_bucket_names
   enabled = true
@@ -45,6 +56,7 @@ resource "aws_cloudfront_distribution" "website" {
     cached_methods = ["GET", "HEAD"]
     cache_policy_id = "658327ea-f89d-4fab-a63d-7e88639e58f6"
     compress = true
+    response_headers_policy_id = aws_cloudfront_response_headers_policy.http-cache-headers.id
     lambda_function_association {
       event_type   = "origin-request"
       include_body = false

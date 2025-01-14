@@ -18,7 +18,7 @@ terraform {
 
 locals {
   root_domain = "sysagnostic.com"
-  s3_bucket_names = toset(concat(["www.${local.root_domain}"], [for id in range(1, 4): format("www%d.%s", id, local.root_domain)]))
+  s3_bucket_names = toset(concat(["www.${local.root_domain}"], [for id in range(1, 1): format("www%d.%s", id, local.root_domain)]))
   github_actions_arn = "arn:aws:iam::180294196620:user/github"
 }
 
